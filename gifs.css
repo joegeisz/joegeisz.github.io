@@ -1,6 +1,6 @@
 body {
     background-color: powderblue;
-    text-align: center;
+    text-align: left;
     font-size: 30px;
   }
 
@@ -11,6 +11,11 @@ h1 {
 p {
     text-align: center;
   }
+
+.intro {
+    text-align: left;
+    margin-bottom: 3cm;
+}
   
 ul {
     text-align: left;
@@ -29,22 +34,32 @@ img {
 
 }
 
-
-.left {
-    width: 60%;
-    float: left
-  }
-  
-.right {
-    width: 40%;
-    float: right
-  }
-
 .container {
     display: grid;
     grid-template-columns: auto auto auto;
 }
   
+
+.item1 {
+    grid-column-start: 1;
+    grid-column-end: 3;
+}
+
+.item2 {
+    grid-column-start: 3;
+    grid-column-end: 4;
+}
+
+.item3 {
+    grid-column-start: 1;
+    grid-column-end: 2;
+}
+
+.item4 {
+    grid-column-start: 2;
+    grid-column-end: 4;
+}
+
   /* Clear floats after the columns */
 .row:after {
     content: "";
