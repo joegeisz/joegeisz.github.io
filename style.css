@@ -17,12 +17,14 @@ ul {
   }
   
 img {
+    margin-top: 100px;
     max-width: 50%;
     height: auto;
     border-radius: 50%;
   }
 
 .image2 {
+      margin-top: 100px;
       max-width: 50%;
       height: auto;
       border-radius: 0%;
@@ -31,7 +33,8 @@ img {
 
 
 .left {
-    width: 60%;
+    margin-left: 2%;
+    width: 58%;
     float: left
   }
   
