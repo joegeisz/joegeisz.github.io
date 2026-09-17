@@ -40,6 +40,7 @@ img {
 }
 
 
+
 .left {
     margin-left: 2%;
     width: 58%;
@@ -48,6 +49,17 @@ img {
   
 .right {
     width: 40%;
+    float: right
+  }
+
+.left2 {
+    width: 40%;
+    float: left
+  }
+  
+.right2 {
+    margin-right: 2%;
+    width: 58%;
     float: right
   }
 
