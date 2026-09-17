@@ -20,12 +20,20 @@ img {
     margin-top: 100px;
     max-width: 50%;
     height: auto;
-    border-radius: 50%;
+    /* border-radius: 50%; */
   }
 
-.image2 {
-      margin-top: 100px;
+.img2 {
+      margin-top: 100px; 
       max-width: 50%;
+      height: auto;
+      border-radius: 0%;
+
+}
+
+.img3 {
+      margin-top: -150px; 
+      max-width: 100%;
       height: auto;
       border-radius: 0%;
 
