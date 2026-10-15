@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>3D Hexagon Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eceee9;
+    --panel: rgba(255,255,255,0.82);
+    --ink: #1d2623;
+    --ink-soft: #5b6863;
+    --edge: #1f6074;
+    --vertex: #2c3834;
+    --tri: #b3336a;
+    --grid: #c4cac4;
+    --line: rgba(29,38,35,0.14);
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12181a;
+      --panel: rgba(28,36,38,0.82);
+      --ink: #e5ece8;
+      --ink-soft: #93a19b;
+      --edge: #6fc6dc;
+      --vertex: #cfd9d4;
+      --tri: #ff7ba9;
+      --grid: #2a3436;
+      --line: rgba(229,236,232,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12181a;
+    --panel: rgba(28,36,38,0.82);
+    --ink: #e5ece8;
+    --ink-soft: #93a19b;
+    --edge: #6fc6dc;
+    --vertex: #cfd9d4;
+    --tri: #ff7ba9;
+    --grid: #2a3436;
+    --line: rgba(229,236,232,0.14);
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  #stage { position: absolute; inset: 0; touch-action: none; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+
+  .panel {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    left: 14px;
+    width: 232px;
+    max-width: calc(100% - 28px);
+    background: var(--panel);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 14px 12px;
+    font-size: 14px;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 12px; letter-spacing: 0.005em; }
+
+  .toggle {
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer; user-select: none;
+    padding: 2px 0 12px;
+  }
+  .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch {
+    width: 34px; height: 20px; border-radius: 10px;
+    background: var(--line); position: relative; flex: none;
+    transition: background 0.15s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--bg); border: 1px solid var(--line);
+    box-sizing: border-box;
+    transition: transform 0.15s;
+  }
+  .toggle input:checked + .switch { background: var(--knot, var(--tri)); }
+  .toggle input:checked + .switch::after { transform: translateX(14px); border-color: transparent; }
+  .toggle input:focus-visible + .switch { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .toggle span.text { line-height: 1.25; }
+  .toggle small { display: block; color: var(--ink-soft); font-size: 12px; }
+
+  .coords { border-top: 1px solid var(--line); padding-top: 10px; }
+  .row {
+    display: grid; grid-template-columns: 16px 1fr 1fr 1fr; gap: 6px;
+    font-size: 12px; font-variant-numeric: tabular-nums;
+    padding: 2px 0; color: var(--ink-soft);
+  }
+  .row b { font-weight: 600; color: var(--ink); }
+  .row.on b { color: var(--knot, var(--tri)); }
+  .row.head { font-size: 11px; color: var(--ink-soft); }
+
+  button {
+    margin-top: 10px; width: 100%;
+    font: inherit; font-size: 13px; font-weight: 500;
+    color: var(--ink); background: transparent;
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 7px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--ink-soft); }
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .hint {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    font-size: 12.5px; color: var(--ink-soft);
+    background: var(--panel); border: 1px solid var(--line);
+    padding: 7px 12px; border-radius: 999px;
+    max-width: calc(100% - 28px); text-align: center;
+    pointer-events: none;
+  }
+  #err { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+  :root { --ok: #1b8a4b; --warn: #a86f0c; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --ok: #4fd98b; --warn: #e3b24c; }
+  }
+  :root[data-theme="dark"] { --ok: #4fd98b; --warn: #e3b24c; }
+
+  .status {
+    border-left: 3px solid var(--line);
+    padding: 2px 0 2px 10px;
+    margin: 0 0 12px;
+    transition: border-color 0.15s;
+  }
+  .status b { display: block; font-size: 14px; font-weight: 600; }
+  .status span { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; line-height: 1.35; }
+  .status[data-state="trefoil"] { border-color: var(--ok); }
+  .status[data-state="trefoil"] b { color: var(--ok); }
+  .status[data-state="crossing"] { border-color: var(--warn); }
+  .status[data-state="crossing"] b { color: var(--warn); }
+
+  :root { --hull: #7a5ac6; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --hull: #b79cff; }
+  }
+  :root[data-theme="dark"] { --hull: #b79cff; }
+  .toggle.hull input:checked + .switch { background: var(--hullc, var(--hull)); }
+
+  :root { --h-tet: #cf4586; --h-bip: #7a5ac6; --h-oct: #d4552a; --h-irr: #8a6a4f; --h-flat: #7b8782; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --h-tet: #ff8cc0; --h-bip: #b79cff; --h-oct: #ff9b73; --h-irr: #d4b08c; --h-flat: #93a19b; }
+  }
+  :root[data-theme="dark"] { --h-tet: #ff8cc0; --h-bip: #b79cff; --h-oct: #ff9b73; --h-irr: #d4b08c; --h-flat: #93a19b; }
+  .hulltype { margin: -6px 0 12px 44px; font-size: 12px; line-height: 1.35; color: var(--ink-soft); }
+  .hulltype b { display: block; font-size: 13px; font-weight: 600; color: var(--hullc, var(--ink)); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="err">The 3D library failed to load. Check your connection and reload the page.</div>
+
+<div class="panel">
+  <h1>Hexagon in 3D</h1>
+  <div class="status" id="status" data-state="unknot" aria-live="polite">
+    <b id="statusTitle">Unknot</b>
+    <span id="statusDetail"></span>
+  </div>
+  <label class="toggle">
+    <input type="checkbox" id="triToggle">
+    <span class="switch"></span>
+    <span class="text">Pierced triangles<small>Based at vertices 2, 4 and 6</small></span>
+  </label>
+  <label class="toggle hull">
+    <input type="checkbox" id="hullToggle">
+    <span class="switch"></span>
+    <span class="text">Convex hull<small>Smallest convex shape around all 6 vertices</small></span>
+  </label>
+  <div class="hulltype" id="hullType" hidden></div>
+  <div class="coords" id="coords"></div>
+  <button id="trefoil" type="button">Load a trefoil</button>
+  <button id="reset" type="button">Reset to flat hexagon</button>
+</div>
+
+<div class="hint">Drag the background to orbit, scroll to zoom, drag a vertex to move it</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  if (typeof THREE === "undefined" || !THREE.OrbitControls) {
+    document.getElementById("err").style.display = "flex";
+    return;
+  }
+
+  const host = document.getElementById("stage");
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  host.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 100);
+  camera.position.set(4.6, 3.6, 6.2);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 0, 0);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+  sun.position.set(3, 6, 4);
+  scene.add(sun);
+
+  const grid = new THREE.GridHelper(12, 12, 0x888888, 0x888888);
+  grid.position.y = -2.2;
+  grid.material.transparent = true;
+  grid.material.opacity = 0.5;
+  scene.add(grid);
+
+  // ---- Vertices ----
+  const R = 2;
+  const initial = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    initial.push(new THREE.Vector3(Math.cos(a) * R, 0, Math.sin(a) * R));
+  }
+  const TRI = [1, 3, 5]; // vertices 2, 4, 6: the centers of the three triangles
+  const TRIS = [[0, 1, 2], [2, 3, 4], [4, 5, 0]];
+
+  const sphereGeo = new THREE.SphereGeometry(0.13, 24, 16);
+  const vMeshes = [];
+  const vMats = [];
+  const labels = [];
+  for (let i = 0; i < 6; i++) {
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.05 });
+    const m = new THREE.Mesh(sphereGeo, mat);
+    m.position.copy(initial[i]);
+    m.userData.index = i;
+    scene.add(m);
+    vMeshes.push(m);
+    vMats.push(mat);
+
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false, transparent: true }));
+    sp.scale.set(0.42, 0.42, 1);
+    sp.renderOrder = 10;
+    scene.add(sp);
+    labels.push(sp);
+  }
+
+  // ---- Hexagon outline ----
+  const edgeGeo = new THREE.CylinderGeometry(0.05, 0.05, 1, 14, 1);
+  const edgeMat = new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.05 });
+  const edgeMeshes = [];
+  for (let i = 0; i < 6; i++) {
+    const m = new THREE.Mesh(edgeGeo, edgeMat);
+    scene.add(m);
+    edgeMeshes.push(m);
+  }
+  const _up = new THREE.Vector3(0, 1, 0), _dir = new THREE.Vector3();
+  function placeEdge(m, a, b) {
+    _dir.subVectors(b, a);
+    const len = _dir.length();
+    m.position.addVectors(a, b).multiplyScalar(0.5);
+    m.scale.set(1, Math.max(len, 1e-6), 1);
+    if (len > 1e-9) m.quaternion.setFromUnitVectors(_up, _dir.multiplyScalar(1 / len));
+  }
+
+  // ---- Triangles based at vertices 2, 4 and 6 (v1v2v3, v3v4v5, v5v6v1) ----
+  const triGroup = new THREE.Group();
+  triGroup.visible = false;
+  const triLineGeo = new THREE.BufferGeometry();
+  triLineGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(54), 3));
+  const triLineMat = new THREE.LineBasicMaterial();
+  const triLine = new THREE.LineSegments(triLineGeo, triLineMat);
+  triLine.frustumCulled = false;
+  const triFillGeo = new THREE.BufferGeometry();
+  triFillGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(27), 3));
+  const triFillMat = new THREE.MeshBasicMaterial({
+    transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false
+  });
+  const triFill = new THREE.Mesh(triFillGeo, triFillMat);
+  triFill.frustumCulled = false;
+  triGroup.add(triFill, triLine);
+  scene.add(triGroup);
+
+  // ---- Convex hull of all six vertices ----
+  // Vertices are nudged by a tiny fixed offset (about 0.002) so a perfectly flat hexagon
+  // still has a well-defined hull (a very thin slab) instead of a degenerate one.
+  const JIT = [[0.31, -0.77, 0.52], [-0.64, 0.21, 0.83], [0.18, 0.69, -0.41],
+               [-0.55, -0.36, 0.27], [0.73, 0.48, -0.66], [-0.29, 0.84, 0.12]]
+    .map((v) => new THREE.Vector3(v[0], v[1], v[2]).multiplyScalar(0.002));
+  const hullMat = new THREE.MeshStandardMaterial({
+    transparent: true, opacity: 0.3, side: THREE.DoubleSide,
+    depthWrite: false, flatShading: true, roughness: 0.85
+  });
+  const hullLineMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.9 });
+  const hullMesh = new THREE.Mesh(new THREE.BufferGeometry(), hullMat);
+  const hullLines = new THREE.LineSegments(new THREE.BufferGeometry(), hullLineMat);
+  hullMesh.frustumCulled = false;
+  hullLines.frustumCulled = false;
+  hullMesh.visible = hullLines.visible = false;
+  scene.add(hullMesh, hullLines);
+
+  let hullKey = "flat";
+  function paintHull() {
+    const c = colors.h[hullKey === "other" ? "flat" : hullKey];
+    hullMat.color.set(c);
+    hullLineMat.color.set(c);
+    document.documentElement.style.setProperty("--hullc", c);
+  }
+
+  // Combinatorial type of the hull, from the number of faces meeting at each hull vertex.
+  function classifyHull(p, faces) {
+    const deg = [0, 0, 0, 0, 0, 0];
+    faces.forEach((f) => f.forEach((v) => deg[v]++));
+    const seq = deg.filter((d) => d > 0).sort((x, y) => x - y);
+    const degs = seq.join("");
+    const cen = new THREE.Vector3();
+    p.forEach((v) => cen.add(v));
+    cen.multiplyScalar(1 / 6);
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    let vol = 0;
+    faces.forEach((f) => {
+      a.subVectors(p[f[0]], cen);
+      b.subVectors(p[f[1]], cen);
+      c.subVectors(p[f[2]], cen);
+      vol += a.dot(b.cross(c)) / 6;
+    });
+    vol = Math.abs(vol);
+
+    let name, detail;
+    if (vol < 0.005 || seq.length < 4) {
+      hullKey = "flat"; name = "Flat";
+      detail = "All six vertices lie in one plane, so there is no 3D hull.";
+    } else if (seq.length === 4) {
+      hullKey = "tet"; name = "Tetrahedron";
+      detail = "4 hull vertices, 2 vertices inside";
+    } else if (seq.length === 5) {
+      hullKey = "bip"; name = "Bipyramid";
+      detail = "5 hull vertices, 1 vertex inside. Degrees " + degs;
+    } else if (degs === "444444") {
+      hullKey = "oct"; name = "Octahedron (regular type)";
+      detail = "6 hull vertices. Degrees " + degs;
+    } else if (degs === "334455") {
+      hullKey = "irr"; name = "Octahedron (irregular type)";
+      detail = "6 hull vertices. Degrees " + degs;
+    } else {
+      hullKey = "other"; name = "Other hull";
+      detail = "Degrees " + degs;
+    }
+    paintHull();
+    hullTypeEl.textContent = "";
+    const bEl = document.createElement("b");
+    bEl.textContent = name;
+    hullTypeEl.appendChild(bEl);
+    hullTypeEl.appendChild(document.createTextNode(detail));
+  }
+
+  function updateHull(p) {
+    const q = p.map((v, i) => v.clone().add(JIT[i]));
+    const pos = [];
+    const faces = [];
+    const ab = new THREE.Vector3(), ac = new THREE.Vector3();
+    const n = new THREE.Vector3(), w = new THREE.Vector3();
+    // A triple of points is a hull face when all other points lie on one side of its plane.
+    for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) for (let k = j + 1; k < 6; k++) {
+      ab.subVectors(q[j], q[i]);
+      ac.subVectors(q[k], q[i]);
+      n.crossVectors(ab, ac);
+      if (n.lengthSq() < 1e-12) continue;
+      let above = 0, below = 0;
+      for (let m = 0; m < 6; m++) {
+        if (m === i || m === j || m === k) continue;
+        if (n.dot(w.subVectors(q[m], q[i])) > 0) above++; else below++;
+      }
+      if (above && below) continue;
+      const a = q[i], b = above ? q[k] : q[j], c = above ? q[j] : q[k];
+      pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+      faces.push(above ? [i, k, j] : [i, j, k]);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    hullMesh.geometry.dispose();
+    hullMesh.geometry = g;
+    hullLines.geometry.dispose();
+    hullLines.geometry = new THREE.EdgesGeometry(g, 8);
+    classifyHull(p, faces);
+  }
+
+  // Markers where the other edges pierce those triangles
+  const hitMat = new THREE.MeshBasicMaterial();
+  const hitGeo = new THREE.SphereGeometry(0.07, 16, 12);
+  const hitMeshes = [];
+  let lastHits = [];
+  for (let k = 0; k < 6; k++) {
+    const m = new THREE.Mesh(hitGeo, hitMat);
+    m.visible = false;
+    m.renderOrder = 5;
+    scene.add(m);
+    hitMeshes.push(m);
+  }
+
+  // ---- Theme ----
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  let colors = {};
+  let state = "unknot";
+
+  function paintHexagon() {
+    const c = state === "trefoil" ? colors.ok : state === "crossing" ? colors.warn : colors.edge;
+    colors.knot = c;
+    edgeMat.color.set(c);
+    triLineMat.color.set(c);
+    triFillMat.color.set(c);
+    document.documentElement.style.setProperty("--knot", c);
+    renderVertexColors();
+  }
+
+  function drawLabel(sprite, text, color) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d");
+    g.font = '600 72px "IBM Plex Sans", system-ui, sans-serif';
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillStyle = color;
+    g.fillText(text, 64, 68);
+    if (sprite.material.map) sprite.material.map.dispose();
+    sprite.material.map = new THREE.CanvasTexture(c);
+    sprite.material.needsUpdate = true;
+  }
+
+  function applyTheme() {
+    colors = {
+      ink: css("--ink"), edge: css("--edge"), vertex: css("--vertex"),
+      tri: css("--tri"), grid: css("--grid"),
+      ok: css("--ok"), warn: css("--warn"), hull: css("--hull"),
+      h: { tet: css("--h-tet"), bip: css("--h-bip"), oct: css("--h-oct"), irr: css("--h-irr"), flat: css("--h-flat") }
+    };
+    paintHexagon();
+    hitMat.color.set(colors.ink);
+    paintHull();
+    grid.material.color.set(colors.grid);
+    // GridHelper has a single material for both line colors
+    renderVertexColors();
+    for (let i = 0; i < 6; i++) drawLabel(labels[i], String(i + 1), colors.ink);
+  }
+
+  function renderVertexColors() {
+    const on = toggle.checked;
+    for (let i = 0; i < 6; i++) {
+      const hl = on && TRI.indexOf(i) !== -1;
+      vMats[i].color.set(hl ? colors.knot : colors.vertex);
+    }
+    rows.forEach((r, i) => r.classList.toggle("on", on && TRI.indexOf(i) !== -1));
+  }
+
+  // ---- Panel ----
+  const toggle = document.getElementById("triToggle");
+  const hullToggle = document.getElementById("hullToggle");
+  const hullTypeEl = document.getElementById("hullType");
+  hullToggle.addEventListener("change", () => {
+    hullMesh.visible = hullLines.visible = hullToggle.checked;
+    hullTypeEl.hidden = !hullToggle.checked;
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "h" || e.key === "H") {
+      hullToggle.checked = !hullToggle.checked;
+      hullToggle.dispatchEvent(new Event("change"));
+    }
+  });
+  const coordsEl = document.getElementById("coords");
+  const rows = [];
+  const cells = [];
+  (function buildPanel() {
+    const head = document.createElement("div");
+    head.className = "row head";
+    head.innerHTML = "<span></span><span>x</span><span>y</span><span>z</span>";
+    coordsEl.appendChild(head);
+    for (let i = 0; i < 6; i++) {
+      const r = document.createElement("div");
+      r.className = "row";
+      r.innerHTML = "<b>" + (i + 1) + "</b><span></span><span></span><span></span>";
+      coordsEl.appendChild(r);
+      rows.push(r);
+      cells.push(r.querySelectorAll("span"));
+    }
+  })();
+
+  // ---- Knot classification (Calvo, Lemma 9) ----
+  // For i = 2, 4, 6, the triangle (v[i-1], v[i], v[i+1]) is oriented by the right-hand rule.
+  // Delta_i is the signed count of the other edges that pierce it.
+  // Trefoil iff Delta2 = Delta4 = Delta6 = +-1; unknot iff some Delta_i = 0.
+  const _n = new THREE.Vector3(), _d = new THREE.Vector3(), _x = new THREE.Vector3();
+  const _t = new THREE.Vector3(), _u = new THREE.Vector3();
+  function pierce(P, Q, A, B, C) {
+    _n.subVectors(B, A).cross(_t.subVectors(C, A));
+    _d.subVectors(Q, P);
+    const den = _n.dot(_d);
+    if (Math.abs(den) < 1e-12) return 0;
+    const t = _n.dot(_t.subVectors(A, P)) / den;
+    if (t <= 0 || t >= 1) return 0;
+    _x.copy(_d).multiplyScalar(t).add(P);
+    const tri = [A, B, C];
+    for (let k = 0; k < 3; k++) {
+      const U = tri[k], V = tri[(k + 1) % 3];
+      _u.subVectors(V, U).cross(_t.subVectors(_x, U));
+      if (_u.dot(_n) < 0) return 0;
+    }
+    return den > 0 ? 1 : -1;
+  }
+  function segDist(p1, q1, p2, q2) {
+    const d1 = q1.clone().sub(p1), d2 = q2.clone().sub(p2), r = p1.clone().sub(p2);
+    const a = d1.dot(d1), e = d2.dot(d2);
+    if (a < 1e-12 || e < 1e-12) return p1.distanceTo(p2);
+    const f = d2.dot(r), c = d1.dot(r), b = d1.dot(d2), denom = a * e - b * b;
+    const cl = THREE.MathUtils.clamp;
+    let s = denom > 1e-12 ? cl((b * f - c * e) / denom, 0, 1) : 0;
+    let t = (b * s + f) / e;
+    if (t < 0) { t = 0; s = cl(-c / a, 0, 1); }
+    else if (t > 1) { t = 1; s = cl((b - c) / a, 0, 1); }
+    return p1.clone().addScaledVector(d1, s).distanceTo(p2.clone().addScaledVector(d2, t));
+  }
+
+  const statusEl = document.getElementById("status");
+  const statusTitle = document.getElementById("statusTitle");
+  const statusDetail = document.getElementById("statusDetail");
+
+  function showHits() {
+    hitMeshes.forEach((m, k) => {
+      const h = lastHits[k];
+      m.visible = !!h && toggle.checked;
+      if (h) m.position.copy(h);
+    });
+  }
+
+  function classify(p) {
+    let touching = false;
+    for (let i = 0; i < 6 && !touching; i++) {
+      for (let j = i + 2; j < 6; j++) {
+        if (i === 0 && j === 5) continue;
+        if (segDist(p[i], p[(i + 1) % 6], p[j], p[(j + 1) % 6]) < 0.05) { touching = true; break; }
+      }
+    }
+    const hits = [];
+    const D = [1, 3, 5].map((i) => {
+      const T = [(i + 5) % 6, i, (i + 1) % 6];
+      let s = 0;
+      for (let e = 0; e < 6; e++) {
+        const f = (e + 1) % 6;
+        if (T.indexOf(e) !== -1 || T.indexOf(f) !== -1) continue;
+        const r = pierce(p[e], p[f], p[T[0]], p[T[1]], p[T[2]]);
+        if (r) hits.push(_x.clone());
+        s += r;
+      }
+      return s;
+    });
+    const delta = D[0] * D[1] * D[2];
+    const curl = Math.sign(new THREE.Vector3().subVectors(p[2], p[0])
+      .cross(new THREE.Vector3().subVectors(p[4], p[0]))
+      .dot(new THREE.Vector3().subVectors(p[1], p[0])));
+
+    let title, detail;
+    if (touching) {
+      state = "crossing";
+      title = "Edges are touching";
+      detail = "The hexagon has to be embedded (no edge crossing another) to have a knot type.";
+    } else if (delta !== 0) {
+      state = "trefoil";
+      title = (delta > 0 ? "Right-handed" : "Left-handed") + " trefoil";
+      detail = "Δ2 = " + D[0] + ", Δ4 = " + D[1] + ", Δ6 = " + D[2] + "; curl " + (curl > 0 ? "+1" : "−1");
+    } else {
+      state = "unknot";
+      title = "Unknot";
+      detail = "Δ2 = " + D[0] + ", Δ4 = " + D[1] + ", Δ6 = " + D[2] + ". At least one is 0, so it can be flattened.";
+    }
+    statusEl.dataset.state = state;
+    statusTitle.textContent = title;
+    statusDetail.textContent = detail;
+    paintHexagon();
+    lastHits = hits;
+    showHits();
+  }
+
+  function updateGeometry() {
+    const p = vMeshes.map((m) => m.position);
+
+    for (let i = 0; i < 6; i++) placeEdge(edgeMeshes[i], p[i], p[(i + 1) % 6]);
+
+    const la = triLineGeo.attributes.position;
+    const ta = triFillGeo.attributes.position;
+    let li = 0;
+    TRIS.forEach((tr, k) => {
+      for (let j = 0; j < 3; j++) {
+        const a = p[tr[j]], b = p[tr[(j + 1) % 3]];
+        la.setXYZ(li++, a.x, a.y, a.z);
+        la.setXYZ(li++, b.x, b.y, b.z);
+        ta.setXYZ(k * 3 + j, a.x, a.y, a.z);
+      }
+    });
+    la.needsUpdate = true;
+    ta.needsUpdate = true;
+
+    for (let i = 0; i < 6; i++) {
+      labels[i].position.set(p[i].x, p[i].y + 0.38, p[i].z);
+      cells[i][0].textContent = p[i].x.toFixed(2);
+      cells[i][1].textContent = p[i].y.toFixed(2);
+      cells[i][2].textContent = p[i].z.toFixed(2);
+    }
+    classify(p);
+    updateHull(p);
+  }
+
+  toggle.addEventListener("change", () => {
+    triGroup.visible = toggle.checked;
+    renderVertexColors();
+    showHits();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "t" || e.key === "T") {
+      toggle.checked = !toggle.checked;
+      toggle.dispatchEvent(new Event("change"));
+    }
+  });
+  document.getElementById("reset").addEventListener("click", () => {
+    vMeshes.forEach((m, i) => m.position.copy(initial[i]));
+    updateGeometry();
+  });
+
+  // Equilateral right-handed trefoil H1 from the paper (coordinates by K. Millett),
+  // rotated so z is up becomes y is up, centered and scaled to fit the scene.
+  document.getElementById("trefoil").addEventListener("click", () => {
+    const H1 = [
+      [0, 0, 0], [0.886375, 0.276357, 0.371441], [0.125043, -0.363873, 0.473812],
+      [0.549367, 0.461959, 0.845227], [0.818041, 0, 0], [0.4090205, -0.343939, 0.845227]
+    ];
+    const c = [0, 0, 0];
+    H1.forEach((v) => { for (let k = 0; k < 3; k++) c[k] += v[k] / 6; });
+    const S = 2.6;
+    vMeshes.forEach((m, i) => {
+      const x = H1[i][0] - c[0], y = H1[i][1] - c[1], z = H1[i][2] - c[2];
+      m.position.set(x * S, z * S, -y * S);
+    });
+    updateGeometry();
+  });
+
+  // ---- Dragging vertices ----
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  const dragPlane = new THREE.Plane();
+  const hitPoint = new THREE.Vector3();
+  const offset = new THREE.Vector3();
+  const camDir = new THREE.Vector3();
+  const dom = renderer.domElement;
+  let dragging = null;
+  let hovered = null;
+
+  function setRay(e) {
+    const r = dom.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+  }
+  function pick(e) {
+    setRay(e);
+    const hit = raycaster.intersectObjects(vMeshes, false)[0];
+    return hit ? hit.object : null;
+  }
+  function setHover(m) {
+    if (hovered === m) return;
+    if (hovered) hovered.scale.setScalar(1);
+    hovered = m;
+    if (hovered) hovered.scale.setScalar(1.35);
+    dom.style.cursor = m ? "grab" : "";
+  }
+
+  dom.addEventListener("pointerdown", (e) => {
+    const m = pick(e);
+    if (!m) return;
+    dragging = m;
+    controls.enabled = false;
+    camera.getWorldDirection(camDir);
+    dragPlane.setFromNormalAndCoplanarPoint(camDir, m.position);
+    if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) offset.copy(hitPoint).sub(m.position);
+    else offset.set(0, 0, 0);
+    dom.setPointerCapture(e.pointerId);
+    dom.style.cursor = "grabbing";
+    setHover(m);
+    e.preventDefault();
+  });
+
+  dom.addEventListener("pointermove", (e) => {
+    if (dragging) {
+      setRay(e);
+      if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
+        dragging.position.copy(hitPoint.sub(offset));
+        updateGeometry();
+      }
+    } else if (e.pointerType === "mouse") {
+      setHover(pick(e));
+    }
+  });
+
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = null;
+    controls.enabled = true;
+    try { dom.releasePointerCapture(e.pointerId); } catch (_) {}
+    dom.style.cursor = hovered ? "grab" : "";
+  }
+  dom.addEventListener("pointerup", endDrag);
+  dom.addEventListener("pointercancel", endDrag);
+
+  // ---- Sizing and loop ----
+  function resize() {
+    const w = host.clientWidth, h = host.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  resize();
+  applyTheme();
+  updateGeometry();
+
+  (function loop() {
+    requestAnimationFrame(loop);
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+})();
+</script>
+</body>
+</html>

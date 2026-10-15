@@ -1,0 +1,142 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Knot Crossing Matrix Explorer – Joseph Geisz</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:powderblue;--fg:#000;--mut:#3b4d52;--card:#fff;--bd:#7fa3ab;--hi:#e8782a;--lo:#2a6fe8;--ok:#0b6b3a;--bad:#b00020}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{background-color:powderblue;color:var(--fg);text-align:center;font-size:30px;margin:0;padding:8px 16px;font-family:"Times New Roman",Times,serif}
+h1{text-align:center;margin:.3em 0 .1em}p{text-align:center}
+nav,footer{font-size:30px;margin:.2em 0}nav a,footer a{margin:0 .5em}
+p.s{font-size:20px;color:var(--mut);margin:0 auto 14px;max-width:900px}
+.tool{font-size:16px;max-width:1150px;margin:0 auto}
+.g{display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:20px}@media(max-width:800px){.g{grid-template-columns:1fr}}
+.c{border-top:1px solid var(--bd);padding:8px 0 4px;margin-bottom:10px}
+.c h2{font-size:18px;font-weight:bold;margin:0 0 6px}
+svg{width:100%;background:var(--card);border:1px solid var(--bd);touch-action:none}
+table{border-collapse:collapse;font:13px ui-monospace,monospace;margin:0 auto}td,th{padding:2px 6px;text-align:right}th{color:var(--mut);font-weight:normal}
+.row{display:flex;align-items:center;gap:8px;margin:2px 0}.row input{flex:1}.row span{width:84px;font:13px ui-monospace,monospace;text-align:left}
+button{background:#fff;color:#000;border:1px solid var(--bd);border-radius:3px;padding:3px 8px;cursor:pointer;margin:2px;font:15px "Times New Roman",serif}
+button:hover{background:#eaf6f9}.v{font:13px ui-monospace,monospace;margin:3px 0;word-break:break-all}.ok{color:var(--ok)}.bad{color:var(--bad)}.m{color:var(--mut);font-size:15px}
+</style></head><body>
+<h1>Knot Crossing Matrix Explorer</h1>
+<p class="s"><b>What this shows.</b> A polygonal knot diagram in the plane with n vertices and m crossings defines a matrix A that sends vertex heights z to crossing heights c = Az (over-strand height minus under-strand height at each crossing). The panels below display A together with its kernel, corange (row space) and cokernel, which update live as you move vertices, change heights, or flip crossings. Green crossings agree with the drawn over/under; red ones don't.</p>
+<p class="s" style="font-size:13px"><i>Disclaimer: this tool was created by using Claude.</i></p>
+<p class="s">Starts as a stick trefoil (6 segments). Use the segment buttons, the presets, or the vertical-edge selector (splits one vertex into two stacked vertices joined by a vertical stick, which adds a 3D segment but no crossing). Drag vertices, click a crossing to flip over/under, and set vertex heights z. Everything is recomputed live.</p>
+<div class="tool"><div class="g"><div>
+<svg id="sv" viewBox="0 0 400 400"></svg>
+<svg id="sv3" viewBox="0 0 400 320" style="margin-top:12px;cursor:grab"></svg>
+<div class="m" style="margin:4px 0 0">3D view: drag to rotate. Vertical bars at crossings span under → over strand (filled dot = over); green if c &gt; 0.</div>
+<div class="c" style="margin-top:12px"><h2>Vertex heights z</h2><div id="sl"></div>
+<button onclick="setZ(kb[0],1)">z = kernel vector</button>
+<button onclick="setZ(corand())">z = random ⟂ kernel</button>
+<button onclick="setZ(rand())">z = random</button>
+<button onclick="resetAlt()">reset alternating</button><br><button onclick="addSeg()">+ add segment</button><button onclick="rmSeg()">− remove segment</button><button onclick="preset('penta')">pentagram</button><button onclick="preset('tref')">trefoil (6)</button></div>
+</div><div>
+<div class="c"><h2>A (rows = crossings, cols = vertices)</h2><div id="mat"></div><div id="dims" class="v"></div></div>
+<div class="c"><h2>c = A z &nbsp;(over − under)</h2><div id="cv" class="v"></div><div class="m">green = height agrees with the drawn over/under, red = it doesn't</div></div>
+<div class="c"><h2>Kernel of A ⊂ Rⁿ &nbsp;(z that zero every crossing)</h2><div id="ker"></div></div>
+<div class="c"><h2>Corange (row space) ⊂ Rⁿ &nbsp;(= ker⊥)</h2><div id="cor" class="v"></div><div id="zsplit" class="v"></div></div>
+<div class="c"><h2>Cokernel ≅ ker Aᵀ ⊂ Rᵐ &nbsp;(relations λ·c = 0 forced on every c)</h2><div id="cok"></div></div>
+</div></div></div>
+<p>
+    <a href="research_math.html"> &larr; Back to the math research page</a>
+</p>
+<script>
+let n=6,vert=-1;const svg=document.getElementById('sv'),$=id=>document.getElementById(id);
+let P=[[102,25],[312,326],[38,375],[258,81],[362,220],[49,225]];
+let z=[0.8,-0.8,0.8,-0.68,0.68,-0.8],ov={},cr=[],A=[],kb=[],cb=[];
+const nzf=()=>n+(vert>=0?1:0),cs=i=>i==vert?n:i,ce=i=>(i+1)%n,vl=i=>i<n?'v'+(i+1):'v'+(vert+1)+'′';
+const fmt=x=>(Math.abs(x)<5e-4?0:x).toFixed(2),EPS=1e-9;
+function inter(i,j){const p=P[i],q=P[(i+1)%n],r=P[j],s=P[(j+1)%n];
+ const d1=[q[0]-p[0],q[1]-p[1]],d2=[s[0]-r[0],s[1]-r[1]],den=d1[0]*d2[1]-d1[1]*d2[0];if(Math.abs(den)<1e-9)return null;
+ const t=((r[0]-p[0])*d2[1]-(r[1]-p[1])*d2[0])/den,u=((r[0]-p[0])*d1[1]-(r[1]-p[1])*d1[0])/den;
+ return(t>0&&t<1&&u>0&&u<1)?{i,j,s:t,t:u,x:p[0]+t*d1[0],y:p[1]+t*d1[1],key:i+'-'+j}:null}
+function build(){cr=[];for(let i=0;i<n;i++)for(let j=i+2;j<n;j++){if(i==0&&j==n-1)continue;const c=inter(i,j);if(c)cr.push(c)}
+ const passes=[];cr.forEach(c=>{passes.push({k:c.key,e:c.i,pos:c.i+c.s});passes.push({k:c.key,e:c.j,pos:c.j+c.t})});
+ passes.sort((a,b)=>a.pos-b.pos);const def={};passes.forEach((p,idx)=>{if(idx%2==0)def[p.k]=p.e});
+ cr.forEach(c=>{c.def=def[c.key];c.over=ov[c.key]!==undefined?ov[c.key]:c.def;if(c.over!=c.i&&c.over!=c.j)c.over=c.def});
+ A=cr.map(c=>{const a=c.over,b=a==c.i?c.j:c.i,sa=a==c.i?c.s:c.t,sb=a==c.i?c.t:c.s,r=Array(nzf()).fill(0);
+  r[cs(a)]+=1-sa;r[ce(a)]+=sa;r[cs(b)]-=1-sb;r[ce(b)]-=sb;c.sa=sa;c.sb=sb;c.a=a;c.b=b;return r});
+ kb=nullsp(A,cr.length,nzf());cb=nullsp(tr(A),nzf(),cr.length)}
+const tr=M=>M[0]?M[0].map((_,j)=>M.map(r=>r[j])):[];
+function nullsp(M,R,C){if(!R)return[...Array(C)].map((_,i)=>{const v=Array(C).fill(0);v[i]=1;return v});
+ const a=M.map(r=>[...r]),piv=[];let row=0;
+ for(let c=0;c<C&&row<R;c++){let b=row;for(let r=row;r<R;r++)if(Math.abs(a[r][c])>Math.abs(a[b][c]))b=r;
+  if(Math.abs(a[b][c])<1e-9)continue;[a[row],a[b]]=[a[b],a[row]];const d=a[row][c];a[row]=a[row].map(x=>x/d);
+  for(let r=0;r<R;r++)if(r!=row){const f=a[r][c];if(f)a[r]=a[r].map((x,k)=>x-f*a[row][k])}piv.push(c);row++}
+ const free=[...Array(C).keys()].filter(c=>!piv.includes(c));
+ return free.map(f=>{const v=Array(C).fill(0);v[f]=1;piv.forEach((p,r)=>v[p]=-a[r][f]);return v})}
+const dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0),mv=(M,v)=>M.map(r=>dot(r,v));
+function onb(B){const o=[];B.forEach(v=>{let w=[...v];o.forEach(u=>{const d=dot(w,u);w=w.map((x,i)=>x-d*u[i])});const l=Math.sqrt(dot(w,w));if(l>1e-9)o.push(w.map(x=>x/l))});return o}
+function projK(v){let w=[...v];onb(kb).forEach(u=>{const d=dot(w,u);w=w.map((x,i)=>x-d*u[i])});return w}
+const rand=()=>z.map(()=>+(Math.random()*1.6-.8).toFixed(2)),corand=()=>projK(rand());
+function setZ(v,norm){const m=Math.max(...v.map(Math.abs));if(m>1||(norm&&m>0))v=v.map(x=>x/m*(norm?.8:1));z=[...v];syncSl();draw()}
+function resetAlt(){ov={};draw()}
+function col(h){const t=(h+1)/2,r=Math.round(42+(232-42)*t),g=Math.round(111+(120-111)*t),b=Math.round(232+(42-232)*t);return`rgb(${r},${g},${b})`}
+const vec=v=>'['+v.map(fmt).join(', ')+']';
+function draw(){build();let h='';
+ const eh=i=>(z[cs(i)]+z[ce(i)])/2;
+ for(let i=0;i<n;i++){const p=P[i],q=P[(i+1)%n];h+=`<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="${col(eh(i))}" stroke-width="5" stroke-linecap="round"/>`}
+ cr.forEach((c,k)=>{const p=P[c.a],q=P[(c.a+1)%n],dx=q[0]-p[0],dy=q[1]-p[1],L=Math.hypot(dx,dy),ux=dx/L*14,uy=dy/L*14,bg=getComputedStyle(document.body).backgroundColor;
+  h+=`<line x1="${c.x-ux}" y1="${c.y-uy}" x2="${c.x+ux}" y2="${c.y+uy}" stroke="${getComputedStyle(svg).backgroundColor}" stroke-width="13" stroke-linecap="butt"/>
+  <line x1="${c.x-ux*1.4}" y1="${c.y-uy*1.4}" x2="${c.x+ux*1.4}" y2="${c.y+uy*1.4}" stroke="${col(eh(c.a))}" stroke-width="5" stroke-linecap="round"/>`});
+ const cv=mv(A,z);
+ cr.forEach((c,k)=>{const okc=cv[k]>1e-6,zero=Math.abs(cv[k])<1e-6;
+  h+=`<g style="cursor:pointer" onclick="flip('${c.key}')"><circle cx="${c.x}" cy="${c.y}" r="16" fill="none" stroke="${zero?'#999':okc?'var(--ok)':'var(--bad)'}" stroke-width="2" stroke-dasharray="${zero?'3 3':''}"/>
+  <text x="${c.x+18}" y="${c.y-14}" font-size="12" fill="currentColor" style="fill:var(--fg)">c${k+1}=${fmt(cv[k])}</text></g>`});
+ P.forEach((p,i)=>{h+=`<circle data-i="${i}" cx="${p[0]}" cy="${p[1]}" r="9" fill="${col(z[i])}" stroke="var(--fg)" stroke-width="2" style="cursor:grab"/><text x="${p[0]+12}" y="${p[1]+4}" font-size="13" style="fill:var(--fg);pointer-events:none">v${i+1}</text>`});
+ if(vert>=0){const p=P[vert];h+=`<circle cx="${p[0]}" cy="${p[1]}" r="15" fill="none" stroke="var(--fg)" stroke-dasharray="3 3"/><text x="${p[0]+12}" y="${p[1]+20}" font-size="11" style="fill:var(--fg)">vertical: v${vert+1}→v${vert+1}′</text>`}
+ svg.innerHTML=h;
+ let t='<table><tr><th></th>'+z.map((_,i)=>`<th>${vl(i)}</th>`).join('')+'</tr>'+A.map((r,k)=>`<tr><th>c${k+1}</th>`+r.map(x=>`<td>${fmt(x)}</td>`).join('')+'</tr>').join('')+'</table>';
+ $('mat').innerHTML=t;const rk=nzf()-kb.length;
+ $('dims').innerHTML=`planar segments=${n}${vert>=0?' + 1 vertical = '+(n+1)+' in 3D':''}, columns=${nzf()}, m=${cr.length}, rank=${rk}<br>dim ker = ${kb.length} · dim corange = ${rk}<br>dim range = ${rk} · dim cokernel = ${cr.length-rk}`;
+ $('cv').innerHTML=cv.map((x,k)=>`<span class="${x>1e-6?'ok':Math.abs(x)<1e-6?'m':'bad'}">c${k+1} = ${fmt(x)}</span>`).join(' &nbsp; ');
+ $('ker').innerHTML=kb.map((v,i)=>`<div class="v">k${i+1} = ${vec(v)} <button onclick="setZ(kb[${i}],1)">use as z</button></div>`).join('')+'<div class="m">The all-ones vector (lifting the whole knot) is always here: it changes no crossing.</div>';
+ const kp=projK(z),zc=z.map((x,i)=>x-kp[i]);
+ $('cor').innerHTML=`Basis (orthonormalized): ${onb(A).map(vec).join('<br>')}<br><span class="m">Each row sums to 0, so the corange lies in the zero-sum hyperplane.</span>`;
+ $('zsplit').innerHTML=`z = z<sub>ker</sub> + z<sub>corange</sub><br>z<sub>ker</sub> = ${vec(z.map((x,i)=>x-zc[i]))}<br>z<sub>cor</sub> = ${vec(zc)}<br><span class="m">Only z<sub>cor</sub> affects c: A z = A z<sub>cor</sub>.</span>`;
+ $('cok').innerHTML=cb.length?cb.map((l,i)=>{const d=dot(l,cv),nz=Math.hypot(...tr(A).map(r=>dot(r,l)));
+  return`<div class="v">λ${i+1} = ${vec(l)}<br>Aᵀλ = ${nz<1e-6?'0 ✓':'≠0'}; &nbsp;λ·c = <b>${fmt(d)}</b> ${Math.abs(d)<1e-6?'✓':''}</div>`}).join('')+'<div class="m">For any z, λ·c = 0. The range of A is exactly the c satisfying all such relations. Try moving a vertex slider and watch λ·c stay 0 while individual c<sub>k</sub> change.</div>'
+  :'<div class="m">Empty: A is onto, so every crossing-height pattern is realizable.</div>'}
+function flip(k){const c=cr.find(c=>c.key==k);ov[k]=c.over==c.i?c.j:c.i;draw()}
+function syncSl(){z.forEach((v,i)=>{$('s'+i).value=v;$('l'+i).textContent=vl(i)+'='+fmt(v)})}
+function buildSl(){const o='<option value="-1">none</option>'+P.map((_,i)=>`<option value="${i}"${i==vert?' selected':''}>v${i+1}</option>`).join('');
+ $('sl').innerHTML=`<div class="row"><span style="width:auto">Vertical edge at:</span><select onchange="setVert(+this.value)" style="background:var(--card);color:var(--fg);border:1px solid var(--bd)">${o}</select></div>`+z.map((_,i)=>`<div class="row"><span id="l${i}"></span><input id="s${i}" type="range" min="-1" max="1" step="0.01" oninput="z[${i}]=+this.value;syncSl();draw()"></div>`).join('')}
+buildSl();
+function setVert(v){if(v==vert)return;if(vert>=0&&v<0)z.pop();else if(vert<0&&v>=0)z.push(Math.max(-1,z[v]-0.4));vert=v;buildSl();syncSl();draw()}
+function addSeg(){let b=0,bl=-1;for(let i=0;i<n;i++){const q=P[(i+1)%n],l=Math.hypot(q[0]-P[i][0],q[1]-P[i][1]);if(l>bl){bl=l;b=i}}
+ const p=P[b],q=P[(b+1)%n],dx=q[0]-p[0],dy=q[1]-p[1];
+ P.splice(b+1,0,[(p[0]+q[0])/2-dy/bl*14,(p[1]+q[1])/2+dx/bl*14]);z.splice(b+1,0,(z[cs(b)]+z[ce(b)])/2);if(vert>=b+1)vert++;n++;ov={};buildSl();syncSl();draw()}
+function rmSeg(){if(n<=3)return;P.pop();if(vert==n-1){z.splice(n-1,2);vert=-1}else z.splice(n-1,1);n--;ov={};buildSl();syncSl();draw()}
+function preset(k){ov={};vert=-1;if(k=='penta'){n=5;P=[...Array(5)].map((_,i)=>{const a=(-90+144*i)*Math.PI/180;return[200+150*Math.cos(a),210+150*Math.sin(a)]})}
+ else{n=6;P=[[102,25],[312,326],[38,375],[258,81],[362,220],[49,225]]}
+ z=k=='tref'?[0.8,-0.8,0.8,-0.68,0.68,-0.8]:rand6(n);buildSl();syncSl();draw()}
+const rand6=m=>[...Array(m)].map(()=>+(Math.random()*1.4-.7).toFixed(2));
+let drag=null;
+svg.addEventListener('pointerdown',e=>{const i=e.target.dataset&&e.target.dataset.i;if(i!==undefined){drag=+i;svg.setPointerCapture(e.pointerId)}});
+svg.addEventListener('pointermove',e=>{if(drag===null)return;const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const q=pt.matrixTransform(svg.getScreenCTM().inverse());P[drag]=[Math.max(10,Math.min(390,q.x)),Math.max(10,Math.min(390,q.y))];draw()});
+svg.addEventListener('pointerup',()=>drag=null);
+
+let yaw=0.7,pitch=0.55;
+function proj(x,y,h){const X=x-200,Z=210-y,Y=h*110,c=Math.cos,s=Math.sin;
+ const x1=X*c(yaw)+Z*s(yaw),z1=-X*s(yaw)+Z*c(yaw);
+ return[200+x1,175-(Y*c(pitch)+z1*s(pitch)),z1*c(pitch)-Y*s(pitch)]}
+const pts=a=>a.map(q=>q[0].toFixed(1)+','+q[1].toFixed(1)).join(' ');
+function draw3d(){const eh=i=>(z[cs(i)]+z[ce(i)])/2,it=[];let h='';
+ h+=`<polygon points="${pts([[0,0],[400,0],[400,400],[0,400]].map(q=>proj(q[0],q[1],0)))}" fill="var(--bd)" fill-opacity=".25" stroke="var(--bd)"/>`;
+ h+=`<polygon points="${pts(P.map(q=>proj(q[0],q[1],0)))}" fill="none" stroke="var(--mut)" stroke-dasharray="4 3"/>`;
+ P.forEach((q,i)=>{const a=proj(q[0],q[1],0),b=proj(q[0],q[1],z[i]);h+=`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="var(--mut)" stroke-dasharray="2 3"/>`;
+  it.push({d:b[2],s:`<circle cx="${b[0]}" cy="${b[1]}" r="6" fill="${col(z[i])}" stroke="var(--fg)" stroke-width="1.5"/><text x="${b[0]+9}" y="${b[1]-6}" font-size="11" style="fill:var(--fg)">v${i+1}</text>`})});
+ if(vert>=0){const q=P[vert],a=proj(q[0],q[1],z[vert]),b=proj(q[0],q[1],z[n]);it.push({d:b[2],s:`<circle cx="${b[0]}" cy="${b[1]}" r="6" fill="${col(z[n])}" stroke="var(--fg)" stroke-width="1.5"/><text x="${b[0]+9}" y="${b[1]-6}" font-size="11" style="fill:var(--fg)">v${vert+1}′</text>`});it.push({d:(a[2]+b[2])/2,s:`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="var(--fg)" stroke-width="4" stroke-linecap="round"/>`})}
+ for(let i=0;i<n;i++){const j=(i+1)%n,a=proj(P[i][0],P[i][1],z[cs(i)]),b=proj(P[j][0],P[j][1],z[ce(i)]);
+  it.push({d:(a[2]+b[2])/2,s:`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${col(eh(i))}" stroke-width="4" stroke-linecap="round"/>`})}
+ it.sort((u,v)=>v.d-u.d);h+=it.map(o=>o.s).join('');
+ cr.forEach((c,k)=>{const ho=(1-c.sa)*z[cs(c.a)]+c.sa*z[ce(c.a)],hu=(1-c.sb)*z[cs(c.b)]+c.sb*z[ce(c.b)],o=proj(c.x,c.y,ho),u=proj(c.x,c.y,hu),d=ho-hu,cl=d>1e-6?'var(--ok)':'var(--bad)';
+  h+=`<line x1="${u[0]}" y1="${u[1]}" x2="${o[0]}" y2="${o[1]}" stroke="${cl}" stroke-width="3"/><circle cx="${o[0]}" cy="${o[1]}" r="4" fill="${cl}"/><circle cx="${u[0]}" cy="${u[1]}" r="4" style="fill:var(--card)" stroke="${cl}" stroke-width="2"/><text x="${o[0]+7}" y="${(o[1]+u[1])/2}" font-size="11" style="fill:var(--fg)">c${k+1}</text>`});
+ $('sv3').innerHTML=h}
+let d3=null;const s3=$('sv3');
+s3.addEventListener('pointerdown',e=>{d3=[e.clientX,e.clientY];s3.setPointerCapture(e.pointerId)});
+s3.addEventListener('pointermove',e=>{if(!d3)return;yaw+=(e.clientX-d3[0])*.01;pitch=Math.max(0,Math.min(1.57,pitch+(e.clientY-d3[1])*.01));d3=[e.clientX,e.clientY];draw3d()});
+s3.addEventListener('pointerup',()=>d3=null);
+const _draw=draw;draw=function(){_draw();draw3d()};
+syncSl();draw();
+</script></body></html>
