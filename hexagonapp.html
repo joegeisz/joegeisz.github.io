@@ -62,6 +62,8 @@
     top: calc(env(safe-area-inset-top, 0px) + 14px);
     left: 14px;
     width: 232px;
+    max-height: calc(100% - 28px - env(safe-area-inset-top, 0px));
+    overflow-y: auto;
     max-width: calc(100% - 28px);
     background: var(--panel);
     backdrop-filter: blur(10px);
@@ -160,6 +162,14 @@
   :root[data-theme="dark"] { --h-tet: #ff8cc0; --h-bip: #b79cff; --h-oct: #ff9b73; --h-irr: #d4b08c; --h-flat: #93a19b; }
   .hulltype { margin: -6px 0 12px 44px; font-size: 12px; line-height: 1.35; color: var(--ink-soft); }
   .hulltype b { display: block; font-size: 13px; font-weight: 600; color: var(--hullc, var(--ink)); }
+  .energy { border-top: 1px solid var(--line); padding-top: 10px; margin-bottom: 12px; }
+  .energy-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+  .energy-row b { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .energy-note { font-size: 12px; color: var(--ink-soft); margin-top: 3px; line-height: 1.35; }
+  button.active { border-color: var(--knot, var(--ink)); color: var(--knot, var(--ink)); }
+  #flow { margin-top: 8px; }
+  .speed { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); margin-top: 8px; }
+  .speed input { flex: 1; min-width: 0; accent-color: var(--knot, var(--ink)); }
 </style>
 </head>
 <body>
@@ -183,6 +193,12 @@
     <span class="text">Convex hull<small>Smallest convex shape around all 6 vertices</small></span>
   </label>
   <div class="hulltype" id="hullType" hidden></div>
+  <div class="energy">
+    <div class="energy-row"><span>Minimum distance energy</span><b id="energyVal">0.000</b></div>
+    <div class="energy-note" id="energyNote"></div>
+    <button id="flow" type="button">Flow to minimizer</button>
+    <label class="speed">Speed <input type="range" id="flowSpeed" min="0" max="100" value="35"></label>
+  </div>
   <div class="coords" id="coords"></div>
   <button id="trefoil" type="button">Load a trefoil</button>
   <button id="reset" type="button">Reset to flat hexagon</button>
@@ -589,6 +605,172 @@
     showHits();
   }
 
+    // ---- Minimum distance energy (Simon), as defined in Scholtes, "Discrete knot energies" ----
+  //   E_md(p) = U(p) - U(regular n-gon),
+  //   U(p) = sum over ordered pairs of non-adjacent segments (X_i, X_j) of |X_i| |X_j| / dist(X_i, X_j)^2
+  // It is scale invariant, equals 0 at the regular hexagon, and blows up as two edges approach.
+  function segSegD2(x, i, j) {
+    const a0 = 3 * i, a1 = 3 * ((i + 1) % 6), b0 = 3 * j, b1 = 3 * ((j + 1) % 6);
+    const d1x = x[a1] - x[a0], d1y = x[a1 + 1] - x[a0 + 1], d1z = x[a1 + 2] - x[a0 + 2];
+    const d2x = x[b1] - x[b0], d2y = x[b1 + 1] - x[b0 + 1], d2z = x[b1 + 2] - x[b0 + 2];
+    const rx = x[a0] - x[b0], ry = x[a0 + 1] - x[b0 + 1], rz = x[a0 + 2] - x[b0 + 2];
+    const a = d1x * d1x + d1y * d1y + d1z * d1z;
+    const e = d2x * d2x + d2y * d2y + d2z * d2z;
+    if (a < 1e-18 || e < 1e-18) return 1e-12;
+    const f = d2x * rx + d2y * ry + d2z * rz;
+    const c = d1x * rx + d1y * ry + d1z * rz;
+    const b = d1x * d2x + d1y * d2y + d1z * d2z;
+    const den = a * e - b * b;
+    const cl = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+    let s = den > 1e-14 * a * e ? cl((b * f - c * e) / den) : 0;
+    let t = (b * s + f) / e;
+    if (t < 0) { t = 0; s = cl(-c / a); }
+    else if (t > 1) { t = 1; s = cl((b - c) / a); }
+    const dx = rx + d1x * s - d2x * t, dy = ry + d1y * s - d2y * t, dz = rz + d1z * s - d2z * t;
+    return dx * dx + dy * dy + dz * dz;
+  }
+  function energyU(x) {
+    const len = [];
+    for (let i = 0; i < 6; i++) {
+      const k = 3 * i, m = 3 * ((i + 1) % 6);
+      len.push(Math.hypot(x[m] - x[k], x[m + 1] - x[k + 1], x[m + 2] - x[k + 2]));
+    }
+    let U = 0;
+    for (let i = 0; i < 6; i++) {
+      for (let j = 0; j < 6; j++) {
+        if (j === i || j === (i + 1) % 6 || j === (i + 5) % 6) continue;
+        U += (len[i] * len[j]) / segSegD2(x, i, j);
+      }
+    }
+    return U;
+  }
+  function minSegDist(x) {
+    let m = Infinity;
+    for (let i = 0; i < 6; i++) {
+      for (let j = i + 2; j < 6; j++) {
+        if (i === 0 && j === 5) continue;
+        m = Math.min(m, segSegD2(x, i, j));
+      }
+    }
+    return Math.sqrt(m);
+  }
+  const U_REG = (() => {
+    const x = new Float64Array(18);
+    for (let k = 0; k < 6; k++) { const a = (k * Math.PI) / 3; x[3 * k] = Math.cos(a); x[3 * k + 2] = Math.sin(a); }
+    return energyU(x);
+  })();
+  function getX() {
+    const x = new Float64Array(18);
+    vMeshes.forEach((m, i) => { x[3 * i] = m.position.x; x[3 * i + 1] = m.position.y; x[3 * i + 2] = m.position.z; });
+    return x;
+  }
+  function setX(x) {
+    vMeshes.forEach((m, i) => m.position.set(x[3 * i], x[3 * i + 1], x[3 * i + 2]));
+  }
+  function totalLength(x) {
+    let L = 0;
+    for (let i = 0; i < 6; i++) {
+      const k = 3 * i, m = 3 * ((i + 1) % 6);
+      L += Math.hypot(x[m] - x[k], x[m + 1] - x[k + 1], x[m + 2] - x[k + 2]);
+    }
+    return L;
+  }
+  function gradient(x) {
+    const g = new Float64Array(18), h = 1e-5;
+    for (let k = 0; k < 18; k++) {
+      const xk = x[k];
+      x[k] = xk + h; const ep = energyU(x);
+      x[k] = xk - h; const em = energyU(x);
+      x[k] = xk;
+      g[k] = (ep - em) / (2 * h);
+    }
+    return g;
+  }
+
+  // ---- Gradient flow ----
+  // Steepest descent on the vertex positions. Each vertex moves at most a quarter of the smallest
+  // distance between non-adjacent edges per step, so edges never pass through each other and the
+  // knot type is preserved. Every step must lower the energy (otherwise the step is halved).
+  const flow = { running: false, step: 0.05, maxStep: 0.014, iters: 0, L0: 1, note: "" };
+  const flowBtn = document.getElementById("flow");
+  const energyValEl = document.getElementById("energyVal");
+  const energyNoteEl = document.getElementById("energyNote");
+
+  function flowSubstep() {
+    const x = getX();
+    const E0 = energyU(x);
+    const g = gradient(x);
+    let gm = 0;
+    for (let k = 0; k < 6; k++) gm = Math.max(gm, Math.hypot(g[3 * k], g[3 * k + 1], g[3 * k + 2]));
+    if (gm < 1e-6) return false;
+    let t = Math.min(flow.step, flow.maxStep, 0.25 * minSegDist(x));
+    const y = new Float64Array(18);
+    let ok = false;
+    for (let tries = 0; tries < 30; tries++) {
+      for (let k = 0; k < 18; k++) y[k] = x[k] - (t / gm) * g[k];
+      const Ey = energyU(y);
+      if (isFinite(Ey) && Ey < E0) { ok = true; break; }
+      t *= 0.5;
+    }
+    if (!ok) return false;
+    flow.step = Math.min(t * 1.4, 0.5);
+    // The energy is scale invariant: recenter and keep the total length fixed.
+    let cx = 0, cy = 0, cz = 0;
+    for (let k = 0; k < 6; k++) { cx += y[3 * k] / 6; cy += y[3 * k + 1] / 6; cz += y[3 * k + 2] / 6; }
+    const sc = flow.L0 / totalLength(y);
+    for (let k = 0; k < 6; k++) {
+      y[3 * k] = (y[3 * k] - cx) * sc;
+      y[3 * k + 1] = (y[3 * k + 1] - cy) * sc;
+      y[3 * k + 2] = (y[3 * k + 2] - cz) * sc;
+    }
+    setX(y);
+    flow.iters++;
+    return true;
+  }
+  function runFlow() {
+    const alive = flowSubstep();
+    updateGeometry();
+    if (!alive) stopFlow(true);
+  }
+  function startFlow() {
+    flow.running = true;
+    flow.iters = 0;
+    flow.step = 0.05;
+    flow.note = "";
+    flow.L0 = totalLength(getX());
+    flowBtn.textContent = "Stop flow";
+    flowBtn.classList.add("active");
+  }
+  function stopFlow(converged) {
+    flow.running = false;
+    flowBtn.textContent = "Flow to minimizer";
+    flowBtn.classList.remove("active");
+    if (converged) {
+      flow.note = flow.iters > 0
+        ? "Converged after " + flow.iters + " steps. This is a local minimizer within this knot type."
+        : "Already at a critical point of the energy, or edges are too close to move.";
+    } else {
+      flow.note = "";
+    }
+    refreshEnergy();
+  }
+  flowBtn.addEventListener("click", () => (flow.running ? stopFlow(false) : startFlow()));
+  const speedEl = document.getElementById("flowSpeed");
+  const applySpeed = () => { flow.maxStep = 0.004 * Math.pow(0.15 / 0.004, speedEl.value / 100); };
+  speedEl.addEventListener("input", applySpeed);
+  applySpeed();
+
+  function refreshEnergy() {
+    const E = energyU(getX()) - U_REG;
+    energyValEl.textContent = Math.abs(E) < 5e-4 ? "0.000" : E > 1e5 ? E.toExponential(2) : E.toFixed(3);
+    let note;
+    if (flow.running) note = "Flowing, step " + flow.iters;
+    else if (flow.note) note = flow.note;
+    else if (Math.abs(E) < 5e-4) note = "This is the regular hexagon, which is conjectured to be the global minimizer.";
+    else note = "Zero at the regular hexagon. Grows as edges approach each other.";
+    energyNoteEl.textContent = note;
+  }
+
   function updateGeometry() {
     const p = vMeshes.map((m) => m.position);
 
@@ -616,6 +798,7 @@
     }
     classify(p);
     updateHull(p);
+    refreshEnergy();
   }
 
   toggle.addEventListener("change", () => {
@@ -630,6 +813,8 @@
     }
   });
   document.getElementById("reset").addEventListener("click", () => {
+    if (flow.running) stopFlow(false);
+    flow.note = "";
     vMeshes.forEach((m, i) => m.position.copy(initial[i]));
     updateGeometry();
   });
@@ -637,6 +822,8 @@
   // Equilateral right-handed trefoil H1 from the paper (coordinates by K. Millett),
   // rotated so z is up becomes y is up, centered and scaled to fit the scene.
   document.getElementById("trefoil").addEventListener("click", () => {
+    if (flow.running) stopFlow(false);
+    flow.note = "";
     const H1 = [
       [0, 0, 0], [0.886375, 0.276357, 0.371441], [0.125043, -0.363873, 0.473812],
       [0.549367, 0.461959, 0.845227], [0.818041, 0, 0], [0.4090205, -0.343939, 0.845227]
@@ -684,6 +871,7 @@
     const m = pick(e);
     if (!m) return;
     dragging = m;
+    if (flow.running) stopFlow(false);
     controls.enabled = false;
     camera.getWorldDirection(camDir);
     dragPlane.setFromNormalAndCoplanarPoint(camDir, m.position);
@@ -736,6 +924,7 @@
   (function loop() {
     requestAnimationFrame(loop);
     controls.update();
+    if (flow.running) runFlow();
     renderer.render(scene, camera);
   })();
 })();
